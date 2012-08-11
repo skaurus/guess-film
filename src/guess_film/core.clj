@@ -6,37 +6,18 @@
 )
 
 
-(defn decode-text
-    "Decode text in a given encoding to UTF-8"
-    [text, encoding]
-    (apply str (map char (.getBytes text encoding)))
-)
-
 (binding [clj-http.core/*cookie-store* (clj-http.cookies/cookie-store)])
 (defn fetch-url
     "Fetch a http response (body, headers, cookies etc) using clj-http"
     [url]
-    (def response (client/get url {
+    (client/get url {
         ;:debug true,
         :headers {
             "User-Agent" "Mozilla/5.0 (Windows NT 6.1; WOW64; rv:14.0) Gecko/20100101 Firefox/14.0.1",
             "Accept-Language" "ru-ru,ru;q=0.8,en-us;q=0.5,en;q=0.3"
-        }
-    }))
-    (def content-type (get (get response :headers) "content-type"))
-    (when (string? content-type)
-        (def content-type (clojure.string/split content-type #";\s*"))
-        (when (= 2 (count content-type))
-            (def media (clojure.string/split (peek content-type) #"="))
-            (when (= 2 (count media))
-                (def encoding (peek media))
-                (def response (assoc response
-                    :body (decode-text (get response :body) encoding)
-                ))
-            )
-        )
-    )
-    response
+        },
+        :as :auto       ; decode content to UTF-8 automatically
+    })
 )
 
 (defn parse-html
@@ -47,12 +28,29 @@
 
 (defn load-popular-films
     "Loads list of popular films"
-    ([] (load-popular-films ""))
-    ([page] 
+    ([] (load-popular-films "" 5))
+    ([page pages_left]
         (def base_url "http://www.kinopoisk.ru/popular/")
-        (enlive/select
+        (def parsed_html
             (parse-html (get (fetch-url (str base_url, page)) :body))
-            [:div.stat :div :> :a])
+        )
+        ; get a list of vectors [film_name film_id]
+        (def film_list (map
+            #(vector
+                (peek (re-find #"^(.*) \(\d\d\d\d\)" (first (%1 :content))))
+                (re-find #"\d+" ((%1 :attrs) :href))
+            )
+            (enlive/select parsed_html [:div.stat :div :> :a])
+        ))
+        (def next_page
+            (((first
+                (filter
+                    #(if (= (first (%1 :content)) "»") true false)
+                    (enlive/select parsed_html [:div.navigator :ul.list :li.arr :a])
+                )
+            ) :attrs) :href)
+        )
+        next_page
         ;(str body)
         ;(get (parse-string body) 3) ; body
     )
