@@ -28,20 +28,38 @@
 
 (defn load-popular-films
     "Loads list of popular films"
-    ([] (load-popular-films "" 5))
-    ([page pages_left]
+    (
+        []
+        (println "Loading popular films")
+        ; Loop that uses another branch of multimenthod is not so idiomatic I guess.
+        ; But why creating another method or defining anon method will be better?
+        (loop [pages_left 5 page "" films nil]
+            (if (<= pages_left 0)
+                films
+                (do
+                    (def result (load-popular-films page))
+                    (recur (dec pages_left) (result :next_page) (concat films (result :films)))
+                )
+            )
+        )
+    )
+    ([page]
         (def base_url "http://www.kinopoisk.ru/popular/")
+        (def url (str base_url, page))
+        (println (str "  parsing url ", url))
         (def parsed_html
-            (parse-html (get (fetch-url (str base_url, page)) :body))
+            (parse-html (get (fetch-url url) :body))
         )
         ; get a list of vectors [film_name film_id]
-        (def film_list (map
+        (def films (map
             #(vector
-                (peek (re-find #"^(.*) \(\d\d\d\d\)" (first (%1 :content))))
+                (peek (re-find #"^(.*) \(\d+\)" (first (%1 :content)))) ; html/text here?
                 (re-find #"\d+" ((%1 :attrs) :href))
             )
             (enlive/select parsed_html [:div.stat :div :> :a])
         ))
+        ;(println (first films))
+        ; get a link to next page
         (def next_page
             (((first
                 (filter
@@ -50,9 +68,10 @@
                 )
             ) :attrs) :href)
         )
-        next_page
-        ;(str body)
-        ;(get (parse-string body) 3) ; body
+        (def next_page (clojure.string/replace next_page "/popular/" ""))
+        ; return map with results
+        {:films films, :next_page next_page}
     )
 )
+
 
